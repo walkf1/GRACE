@@ -16,6 +16,15 @@ The GRACE infrastructure consists of the following key components:
 - **GraceFoundationStack**: Core infrastructure components (QLDB, S3, EventBridge)
 - **BedrockFlowStack**: Bedrock Flow orchestration and Lambda functions
 
+## Environment Configuration
+
+The infrastructure is designed to be environment-aware:
+
+- **Development**: S3 buckets use `DESTROY` removal policy for easy cleanup
+- **Production**: S3 buckets use `RETAIN` removal policy to prevent accidental deletion
+
+This is controlled via the `isProduction` context variable in `cdk.json`.
+
 ## Deployment Instructions
 
 ### Prerequisites
@@ -33,11 +42,23 @@ npm install
 # Bootstrap CDK (first time only)
 cdk bootstrap aws://ACCOUNT-NUMBER/REGION
 
-# Synthesize CloudFormation templates
-cdk synth
-
-# Deploy the stacks
+# Deploy to development environment (default)
 cdk deploy --all
+
+# Deploy to production environment
+cdk deploy --all --context isProduction=true
+```
+
+### Using the Deployment Script
+
+For convenience, a deployment script is provided:
+
+```bash
+# Deploy to development environment
+./deploy.sh
+
+# Deploy to production environment
+./deploy.sh --production
 ```
 
 ### Important Notes
