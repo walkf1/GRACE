@@ -1,0 +1,10 @@
+{
+  "development": {
+    "removalPolicy": "DESTROY",
+    "description": "Development environment - bucket can be deleted"
+  },
+  "production": {
+    "removalPolicy": "RETAIN",
+    "description": "Production environment - bucket is protected from deletion"
+  }
+}
