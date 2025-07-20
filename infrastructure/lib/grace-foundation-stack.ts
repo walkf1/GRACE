@@ -70,23 +70,25 @@ export class GraceFoundationStack extends cdk.Stack {
     });
 
     // Create the Aurora PostgreSQL Serverless v2 cluster
-    this.database = new rds.DatabaseCluster(this, 'AuditDatabase', {
-      engine: rds.DatabaseClusterEngine.auroraPostgres({
-        version: rds.AuroraPostgresEngineVersion.VER_15_3
-      }),
+    this.database = new rds.ServerlessCluster(this, 'AuditDatabase', {
+      engine: rds.DatabaseClusterEngine.AURORA_POSTGRESQL,
+      parameterGroup: rds.ParameterGroup.fromParameterGroupName(
+        this,
+        'ParameterGroup',
+        'default.aurora-postgresql10'
+      ),
+      defaultDatabaseName: 'postgres',
       credentials: rds.Credentials.fromSecret(this.databaseSecret),
+      vpc: this.vpc,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_ISOLATED
       },
       securityGroups: [dbSecurityGroup],
-      serverlessV2MinCapacity: 0.5,
-      serverlessV2MaxCapacity: 4,
-      instanceProps: {
-        instanceType: ec2.InstanceType.of(ec2.InstanceClass.T3, ec2.InstanceSize.MEDIUM),
-        vpc: this.vpc,
-        publiclyAccessible: false,
+      scaling: {
+        autoPause: cdk.Duration.minutes(10),
+        minCapacity: rds.AuroraCapacityUnit.ACU_2,
+        maxCapacity: rds.AuroraCapacityUnit.ACU_4,
       },
-      instances: 2,
       storageEncrypted: true,
       deletionProtection: isProduction,
       removalPolicy: isProduction ? cdk.RemovalPolicy.SNAPSHOT : cdk.RemovalPolicy.DESTROY,
