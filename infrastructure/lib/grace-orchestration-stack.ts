@@ -58,7 +58,11 @@ export class GraceOrchestrationStack extends cdk.NestedStack {
       eventPattern: {
         source: ['aws.s3'],
         detailType: ['Object Created'],
-        resources: [props.dataBucket.bucketArn]
+        detail: {
+          bucket: {
+            name: [props.dataBucket.bucketName]
+          }
+        }
       },
       targets: [new targets.SfnStateMachine(this.stateMachine)]
     });

@@ -107,10 +107,7 @@ export class GraceFoundationStack extends cdk.Stack {
     });
 
     // Enable EventBridge notifications for the S3 bucket
-    const cfnBucket = this.dataBucket.node.defaultChild as s3.CfnBucket;
-    cfnBucket.addPropertyOverride('NotificationConfiguration', {
-      EventBridgeConfiguration: {}
-    });
+    this.dataBucket.enableEventBridgeNotification();
     
     // Create a rule to forward S3 events to our custom event bus
     new events.Rule(this, 'S3EventsToCustomBus', {
