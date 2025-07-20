@@ -3,6 +3,7 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { GraceFoundationStack } from '../lib/grace-foundation-stack';
 import { GraceLogicStack } from '../lib/grace-logic-stack';
+import { GraceOrchestrationStack } from '../lib/grace-orchestration-stack';
 
 const app = new cdk.App();
 
@@ -29,6 +30,15 @@ const logicStack = new GraceLogicStack(foundationStack, 'GraceLogicStack', {
   databaseSecret: foundationStack.databaseSecret,
   databaseEndpoint: foundationStack.database.clusterEndpoint.hostname,
   databaseSecurityGroup: foundationStack.database.connections.securityGroups[0],
+  isProduction
+});
+
+// Create the orchestration stack as a nested stack
+const orchestrationStack = new GraceOrchestrationStack(foundationStack, 'GraceOrchestrationStack', {
+  description: 'Orchestration layer for the GRACE project including Step Functions and EventBridge rules',
+  provenanceLogger: logicStack.provenanceLogger,
+  dataBucket: foundationStack.dataBucket,
+  eventBus: foundationStack.eventBus,
   isProduction
 });
 
