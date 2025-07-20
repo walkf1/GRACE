@@ -16,6 +16,11 @@ eggs/
 .eggs/
 lib/
 lib64/
+
+# Allow infrastructure/lib directory for CDK code
+!/infrastructure/lib/
+/infrastructure/lib/*.js
+/infrastructure/lib/*.d.ts
 parts/
 sdist/
 var/
