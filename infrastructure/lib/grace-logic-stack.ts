@@ -4,6 +4,8 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
+import * as fs from 'fs';
+import * as child_process from 'child_process';
 import { GraceFoundationStack } from './grace-foundation-stack';
 
 export interface GraceLogicStackProps extends cdk.NestedStackProps {
@@ -16,6 +18,32 @@ export interface GraceLogicStackProps extends cdk.NestedStackProps {
 
 export class GraceLogicStack extends cdk.NestedStack {
   public readonly provenanceLogger: lambda.Function;
+
+  // Helper function to prepare a Lambda layer
+  private preparePsycopg2Layer(): string {
+    const layerPath = path.join(__dirname, '../lambda/layers/psycopg2');
+    const pythonPath = path.join(layerPath, 'python');
+    
+    // Create the python directory if it doesn't exist
+    if (!fs.existsSync(pythonPath)) {
+      fs.mkdirSync(pythonPath, { recursive: true });
+    }
+    
+    // Check if we need to install the dependencies
+    if (!fs.existsSync(path.join(pythonPath, 'psycopg2'))) {
+      console.log('Installing psycopg2 for Lambda layer...');
+      try {
+        // Install the dependencies directly on the host system
+        child_process.execSync(`pip install -r ${path.join(layerPath, 'requirements.txt')} -t ${pythonPath}`, {
+          stdio: 'inherit'
+        });
+      } catch (error) {
+        console.error('Failed to install psycopg2. Using pre-packaged version if available.');
+      }
+    }
+    
+    return layerPath;
+  }
 
   constructor(scope: Construct, id: string, props: GraceLogicStackProps) {
     super(scope, id, props);
@@ -48,21 +76,21 @@ export class GraceLogicStack extends cdk.NestedStack {
       'Allow Lambda to connect to PostgreSQL'
     );
 
+    // Create a Lambda layer for psycopg2
+    const layerPath = this.preparePsycopg2Layer();
+    const psycopg2Layer = new lambda.LayerVersion(this, 'Psycopg2Layer', {
+      code: lambda.Code.fromAsset(layerPath),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_12],
+      description: 'A layer containing psycopg2 for PostgreSQL connections',
+      layerVersionName: `grace-psycopg2-layer-${envSuffix}`
+    });
+    
     // Create the ProvenanceLogger Lambda function
     this.provenanceLogger = new lambda.Function(this, 'ProvenanceLogger', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/provenance_logger'), {
-        bundling: {
-          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
-          command: [
-            'bash', '-c', [
-              'pip install -r requirements.txt -t /asset-output',
-              'cp -au . /asset-output'
-            ].join(' && ')
-          ]
-        }
-      }),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/provenance_logger')),
+      layers: [psycopg2Layer],
       vpc,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
