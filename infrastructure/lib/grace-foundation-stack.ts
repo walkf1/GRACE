@@ -82,7 +82,7 @@ export class GraceFoundationStack extends cdk.Stack {
       serverlessV2MinCapacity: 0.5,
       serverlessV2MaxCapacity: 4,
       instanceProps: {
-        instanceType: ec2.InstanceType.of(ec2.InstanceClass.BURSTABLE3, ec2.InstanceSize.MEDIUM),
+        instanceType: ec2.InstanceType.of(ec2.InstanceClass.SERVERLESS, ec2.InstanceSize.SMALL),
         vpc: this.vpc,
         publiclyAccessible: false,
       },
@@ -90,7 +90,6 @@ export class GraceFoundationStack extends cdk.Stack {
       storageEncrypted: true,
       deletionProtection: isProduction,
       removalPolicy: isProduction ? cdk.RemovalPolicy.SNAPSHOT : cdk.RemovalPolicy.DESTROY,
-      // Enable the Data API
       enableDataApi: true
     });
 

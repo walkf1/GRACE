@@ -48,15 +48,9 @@ export class GraceLogicStack extends cdk.NestedStack {
       'Allow Lambda to connect to PostgreSQL'
     );
 
-    // Create a Lambda layer for psycopg2
-    const psycopg2Layer = lambda.LayerVersion.fromLayerVersionArn(
-      this, 'Psycopg2Layer',
-      'arn:aws:lambda:eu-west-2:898466741470:layer:psycopg2-py39:1'
-    );
-    
     // Create the ProvenanceLogger Lambda function
     this.provenanceLogger = new lambda.Function(this, 'ProvenanceLogger', {
-      runtime: lambda.Runtime.PYTHON_3_9,  // Using Python 3.9 for better compatibility with psycopg2
+      runtime: lambda.Runtime.PYTHON_3_9,
       handler: 'index.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/provenance_logger')),
       vpc,
@@ -64,7 +58,6 @@ export class GraceLogicStack extends cdk.NestedStack {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
       },
       securityGroups: [lambdaSecurityGroup],
-      layers: [psycopg2Layer],
       environment: {
         DATABASE_SECRET_ARN: databaseSecret.secretArn,
         DATABASE_ENDPOINT: props.databaseEndpoint,
@@ -78,6 +71,15 @@ export class GraceLogicStack extends cdk.NestedStack {
 
     // Grant the Lambda function permission to read the database secret
     databaseSecret.grantRead(this.provenanceLogger);
+    
+    // Grant the Lambda function permission to use the RDS Data API
+    this.provenanceLogger.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'rds-data:ExecuteStatement',
+        'rds-data:BatchExecuteStatement'
+      ],
+      resources: ['*']
+    }));
     
     // Grant the Lambda function permission to use the RDS Data API
     this.provenanceLogger.addToRolePolicy(new iam.PolicyStatement({
