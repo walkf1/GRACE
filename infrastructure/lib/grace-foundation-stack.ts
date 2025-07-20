@@ -13,7 +13,7 @@ export interface GraceFoundationStackProps extends cdk.StackProps {
 
 export class GraceFoundationStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
-  public readonly database: rds.ServerlessCluster;
+  public readonly database: rds.DatabaseCluster;
   public readonly databaseSecret: secretsmanager.Secret;
   public readonly dataBucket: s3.Bucket;
   public readonly eventBus: events.EventBus;
@@ -70,28 +70,26 @@ export class GraceFoundationStack extends cdk.Stack {
     });
 
     // Create the Aurora PostgreSQL Serverless v2 cluster
-    this.database = new rds.ServerlessCluster(this, 'AuditDatabase', {
-      engine: rds.DatabaseClusterEngine.AURORA_POSTGRESQL,
-      parameterGroup: rds.ParameterGroup.fromParameterGroupName(
-        this,
-        'ParameterGroup',
-        'default.aurora-postgresql10'
-      ),
-      defaultDatabaseName: 'postgres',
+    this.database = new rds.DatabaseCluster(this, 'AuditDatabase', {
+      engine: rds.DatabaseClusterEngine.auroraPostgres({
+        version: rds.AuroraPostgresEngineVersion.VER_15_3
+      }),
       credentials: rds.Credentials.fromSecret(this.databaseSecret),
-      vpc: this.vpc,
+      defaultDatabaseName: 'postgres',
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_ISOLATED
       },
+      vpc: this.vpc,
       securityGroups: [dbSecurityGroup],
-      scaling: {
-        autoPause: cdk.Duration.minutes(10),
-        minCapacity: rds.AuroraCapacityUnit.ACU_2,
-        maxCapacity: rds.AuroraCapacityUnit.ACU_4,
-      },
+      serverlessV2MinCapacity: 0.5,
+      serverlessV2MaxCapacity: 4,
+      writer: rds.ClusterInstance.serverlessV2('writer'),
+      readers: [
+        rds.ClusterInstance.serverlessV2('reader1')
+      ],
+      storageEncrypted: true,
       deletionProtection: isProduction,
-      removalPolicy: isProduction ? cdk.RemovalPolicy.SNAPSHOT : cdk.RemovalPolicy.DESTROY,
-      enableDataApi: true
+      removalPolicy: isProduction ? cdk.RemovalPolicy.SNAPSHOT : cdk.RemovalPolicy.DESTROY
     });
 
     // 4. Create the S3 bucket for data storage
