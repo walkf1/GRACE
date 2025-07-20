@@ -29,7 +29,7 @@ npx cdk bootstrap
 
 # Deploy with the appropriate context
 echo "Deploying infrastructure..."
-npx cdk deploy --all --context isProduction=$IS_PRODUCTION
+npx cdk deploy --all --context isProduction=$IS_PRODUCTION --require-approval never
 
 echo "=== Deployment Complete ==="
 echo "Environment: $ENVIRONMENT"
