@@ -42,7 +42,8 @@ The GRACE system implements a globally distributed architecture with a clear sep
                                                       ▼
                                             ┌─────────────────┐
                                             │                 │
-                                            │  QLDB Ledger    │
+                                            │  Aurora         │
+                                            │  PostgreSQL     │
                                             │  (Audit Records)│
                                             │                 │
                                             └─────────────────┘
@@ -66,7 +67,7 @@ The GRACE system implements a globally distributed architecture with a clear sep
    - Request is sent to API Gateway endpoint
    - Lambda function validates the request and starts a Step Functions execution
    - Step Functions orchestrate the audit workflow
-   - Results are stored in QLDB ledger
+   - Results are stored in Aurora PostgreSQL with cryptographic chaining
    - User is notified when the audit is complete
 
 ## API Design
@@ -127,7 +128,7 @@ Start
          ▼
 ┌─────────────────┐
 │ Store Results   │
-│ in QLDB         │
+│ in PostgreSQL   │
 └────────┬────────┘
          │
          ▼
@@ -183,8 +184,9 @@ App
 
 3. **Data Protection**:
    - TLS 1.2+ for all API communications
-   - Server-side encryption for QLDB data
+   - Server-side encryption for PostgreSQL data
    - Client-side encryption for sensitive user inputs
+   - Application-level cryptographic chaining for audit records to ensure immutability
 
 ## Deployment Strategy
 

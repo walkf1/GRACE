@@ -13,7 +13,7 @@
 - **Authentication**: Amazon Cognito
 - **Data Storage**: Amazon DynamoDB
 - **Object Storage**: Amazon S3
-- **Immutable Ledger**: Amazon QLDB
+- **Immutable Ledger**: Amazon Aurora PostgreSQL
 
 ## DevOps
 - **CI/CD**: AWS Amplify Continuous Deployment
