@@ -125,8 +125,19 @@ export class GraceFoundationStack extends cdk.Stack {
     // Output the resources for reference
     new cdk.CfnOutput(this, 'VpcId', {
       value: this.vpc.vpcId,
-      description: 'The ID of the VPC'
+      description: 'The ID of the VPC',
+      exportName: `${cdk.Stack.of(this).stackName}-VpcId`
     });
+    
+    // Export private subnet IDs for cross-stack references
+    const privateSubnets = this.vpc.privateSubnets;
+    for (let i = 0; i < privateSubnets.length; i++) {
+      new cdk.CfnOutput(this, `PrivateSubnet${i+1}Id`, {
+        value: privateSubnets[i].subnetId,
+        description: `The ID of private subnet ${i+1}`,
+        exportName: `${cdk.Stack.of(this).stackName}-PrivateSubnet${i+1}`
+      });
+    }
 
     new cdk.CfnOutput(this, 'DatabaseClusterEndpoint', {
       value: this.database.clusterEndpoint.hostname,

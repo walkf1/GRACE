@@ -22,16 +22,15 @@ const foundationStack = new GraceFoundationStack(app, 'GraceFoundationStack', {
   isProduction
 });
 
-// Create the logic stack with Lambda functions
-const logicStack = new GraceLogicStack(app, 'GraceLogicStack', {
-  env,
+// Create the logic stack as a nested stack
+const logicStack = new GraceLogicStack(foundationStack, 'GraceLogicStack', {
   description: 'Business logic layer for the GRACE project including Lambda functions',
-  foundationStack,
+  vpc: foundationStack.vpc,
+  databaseSecret: foundationStack.databaseSecret,
+  databaseEndpoint: foundationStack.database.clusterEndpoint.hostname,
+  databaseSecurityGroup: foundationStack.database.connections.securityGroups[0],
   isProduction
 });
-
-// Add dependency to ensure the foundation stack is deployed first
-logicStack.addDependency(foundationStack);
 
 // Add tags to all resources
 cdk.Tags.of(app).add('Project', 'GRACE');

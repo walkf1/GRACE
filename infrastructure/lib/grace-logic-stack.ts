@@ -6,12 +6,15 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import { GraceFoundationStack } from './grace-foundation-stack';
 
-export interface GraceLogicStackProps extends cdk.StackProps {
-  foundationStack: GraceFoundationStack;
+export interface GraceLogicStackProps extends cdk.NestedStackProps {
+  vpc: ec2.IVpc;
+  databaseSecret: cdk.aws_secretsmanager.ISecret;
+  databaseEndpoint: string;
+  databaseSecurityGroup: ec2.ISecurityGroup;
   isProduction?: boolean;
 }
 
-export class GraceLogicStack extends cdk.Stack {
+export class GraceLogicStack extends cdk.NestedStack {
   public readonly provenanceLogger: lambda.Function;
 
   constructor(scope: Construct, id: string, props: GraceLogicStackProps) {
@@ -21,8 +24,8 @@ export class GraceLogicStack extends cdk.Stack {
     const isProduction = props?.isProduction ?? false;
     const envSuffix = isProduction ? 'prod' : 'dev';
 
-    // Reference resources from the foundation stack
-    const { vpc, database, databaseSecret } = props.foundationStack;
+    // Use the resources passed from the parent stack
+    const { vpc, databaseSecret, databaseSecurityGroup } = props;
 
     // Create a security group for the Lambda function
     const lambdaSecurityGroup = new ec2.SecurityGroup(this, 'ProvenanceLoggerSecurityGroup', {
@@ -30,9 +33,20 @@ export class GraceLogicStack extends cdk.Stack {
       description: 'Security group for the ProvenanceLogger Lambda function',
       allowAllOutbound: true
     });
-
+    
     // Allow the Lambda function to connect to the database
-    database.connections.allowFrom(lambdaSecurityGroup, ec2.Port.tcp(5432), 'Allow Lambda to connect to PostgreSQL');
+    lambdaSecurityGroup.addEgressRule(
+      databaseSecurityGroup,
+      ec2.Port.tcp(5432),
+      'Allow Lambda to connect to PostgreSQL'
+    );
+    
+    // Allow inbound connections from the Lambda to the database
+    databaseSecurityGroup.addIngressRule(
+      lambdaSecurityGroup,
+      ec2.Port.tcp(5432),
+      'Allow Lambda to connect to PostgreSQL'
+    );
 
     // Create the ProvenanceLogger Lambda function
     this.provenanceLogger = new lambda.Function(this, 'ProvenanceLogger', {
@@ -46,7 +60,7 @@ export class GraceLogicStack extends cdk.Stack {
       securityGroups: [lambdaSecurityGroup],
       environment: {
         DATABASE_SECRET_ARN: databaseSecret.secretArn,
-        DATABASE_ENDPOINT: database.clusterEndpoint.hostname,
+        DATABASE_ENDPOINT: props.databaseEndpoint,
         ENVIRONMENT: isProduction ? 'production' : 'development'
       },
       timeout: cdk.Duration.seconds(30),
