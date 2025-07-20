@@ -89,7 +89,8 @@ export class GraceFoundationStack extends cdk.Stack {
       ],
       storageEncrypted: true,
       deletionProtection: isProduction,
-      removalPolicy: isProduction ? cdk.RemovalPolicy.SNAPSHOT : cdk.RemovalPolicy.DESTROY
+      removalPolicy: isProduction ? cdk.RemovalPolicy.SNAPSHOT : cdk.RemovalPolicy.DESTROY,
+      enableDataApi: true
     });
 
     // 4. Create the S3 bucket for data storage
