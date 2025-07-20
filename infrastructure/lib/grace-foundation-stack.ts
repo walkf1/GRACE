@@ -13,7 +13,7 @@ export interface GraceFoundationStackProps extends cdk.StackProps {
 
 export class GraceFoundationStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
-  public readonly database: rds.DatabaseCluster;
+  public readonly database: rds.ServerlessCluster;
   public readonly databaseSecret: secretsmanager.Secret;
   public readonly dataBucket: s3.Bucket;
   public readonly eventBus: events.EventBus;
@@ -89,7 +89,6 @@ export class GraceFoundationStack extends cdk.Stack {
         minCapacity: rds.AuroraCapacityUnit.ACU_2,
         maxCapacity: rds.AuroraCapacityUnit.ACU_4,
       },
-      storageEncrypted: true,
       deletionProtection: isProduction,
       removalPolicy: isProduction ? cdk.RemovalPolicy.SNAPSHOT : cdk.RemovalPolicy.DESTROY,
       enableDataApi: true
