@@ -52,7 +52,17 @@ export class GraceLogicStack extends cdk.NestedStack {
     this.provenanceLogger = new lambda.Function(this, 'ProvenanceLogger', {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/provenance_logger')),
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/provenance_logger'), {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c', [
+              'pip install -r requirements.txt -t /asset-output',
+              'cp -au . /asset-output'
+            ].join(' && ')
+          ]
+        }
+      }),
       vpc,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
