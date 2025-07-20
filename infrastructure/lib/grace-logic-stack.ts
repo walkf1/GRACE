@@ -61,6 +61,12 @@ export class GraceLogicStack extends cdk.NestedStack {
       environment: {
         DATABASE_SECRET_ARN: databaseSecret.secretArn,
         DATABASE_ENDPOINT: props.databaseEndpoint,
+        DATABASE_CLUSTER_ARN: this.formatArn({
+          service: 'rds',
+          resource: 'cluster',
+          resourceName: props.databaseEndpoint.split('.')[0]
+        }),
+        DATABASE_NAME: 'postgres',
         ENVIRONMENT: isProduction ? 'production' : 'development'
       },
       timeout: cdk.Duration.seconds(30),
@@ -71,6 +77,18 @@ export class GraceLogicStack extends cdk.NestedStack {
 
     // Grant the Lambda function permission to read the database secret
     databaseSecret.grantRead(this.provenanceLogger);
+    
+    // Grant the Lambda function permission to use the RDS Data API
+    this.provenanceLogger.addToRolePolicy(new iam.PolicyStatement({
+      actions: [
+        'rds-data:ExecuteStatement',
+        'rds-data:BatchExecuteStatement',
+        'rds-data:BeginTransaction',
+        'rds-data:CommitTransaction',
+        'rds-data:RollbackTransaction'
+      ],
+      resources: ['*']
+    }));
 
     // Output the Lambda function ARN
     new cdk.CfnOutput(this, 'ProvenanceLoggerArn', {
