@@ -1,75 +1,42 @@
 # GRACE Infrastructure
 
-This directory contains the AWS CDK code for deploying the GRACE project infrastructure.
+This directory contains the AWS CDK code for deploying the GRACE infrastructure.
 
-## Architecture Overview
+## Architecture
 
-The GRACE infrastructure consists of the following key components:
+The GRACE infrastructure consists of the following components:
 
-1. **QLDB Ledger**: An immutable ledger for storing audit records
-2. **S3 Bucket**: For storing datasets and audit artifacts
-3. **EventBridge Bus**: For event-driven communication between components
-4. **Bedrock Flows**: For orchestrating AI-powered audit workflows
+1. **GraceFoundationStack**: Core infrastructure components
+   - Amazon VPC with public, private, and isolated subnets
+   - Amazon RDS for PostgreSQL database for audit records
+   - S3 bucket for data storage with event notifications
+   - EventBridge bus for audit events
 
-## Stack Structure
+2. **Database Initialization**: Automated setup of the audit schema
+   - Lambda function to initialize the PostgreSQL database
+   - SQL scripts for creating the audit schema and tables
+   - Custom resource to trigger initialization during deployment
 
-- **GraceFoundationStack**: Core infrastructure components (QLDB, S3, EventBridge)
-- **BedrockFlowStack**: Bedrock Flow orchestration and Lambda functions
+## Deployment
 
-## Environment Configuration
-
-The infrastructure is designed to be environment-aware:
-
-- **Development**: S3 buckets use `DESTROY` removal policy for easy cleanup
-- **Production**: S3 buckets use `RETAIN` removal policy to prevent accidental deletion
-
-This is controlled via the `isProduction` context variable in `cdk.json`.
-
-## Deployment Instructions
-
-### Prerequisites
-
-- Node.js 14.x or later
-- AWS CDK v2
-- AWS CLI configured with appropriate credentials
-
-### Installation
+To deploy the infrastructure:
 
 ```bash
 # Install dependencies
 npm install
 
 # Bootstrap CDK (first time only)
-cdk bootstrap aws://ACCOUNT-NUMBER/REGION
+cdk bootstrap
 
-# Deploy to development environment (default)
-cdk deploy --all
-
-# Deploy to production environment
-cdk deploy --all --context isProduction=true
+# Deploy the foundation stack
+cdk deploy GraceFoundationStack
 ```
 
-### Using the Deployment Script
+## Security Features
 
-For convenience, a deployment script is provided:
-
-```bash
-# Deploy to development environment
-./deploy.sh
-
-# Deploy to production environment
-./deploy.sh --production
-```
-
-### Important Notes
-
-- The infrastructure is configured to deploy to the `eu-west-2` (London) region
-- The S3 bucket has versioning enabled and is configured with appropriate security settings
-- The QLDB ledger has deletion protection enabled
-- Bedrock Flows is currently in preview and may have limitations
-
-## Key Architectural Decisions
-
-1. **Orchestration**: Using Amazon Bedrock Flows for AI workflow integration
-2. **Analytics**: Direct QLDB Query via Lambda for the MVP implementation
-3. **Roadmap**: Phased approach with Nitro Enclaves as a stretch goal
+- VPC with isolated subnets for the database
+- Security groups with least privilege access
+- Encrypted database storage and connections
+- Secrets Manager for database credentials
+- S3 bucket with server-side encryption and public access blocked
+- Event-driven audit trail for all data operations

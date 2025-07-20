@@ -2,7 +2,6 @@
 import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 import { GraceFoundationStack } from '../lib/grace-foundation-stack';
-import { BedrockFlowStack } from '../lib/bedrock-flow-stack';
 
 const app = new cdk.App();
 
@@ -15,13 +14,7 @@ const env = {
 // Create the foundation stack with core resources
 const foundationStack = new GraceFoundationStack(app, 'GraceFoundationStack', {
   env,
-  description: 'Core infrastructure for the GRACE project including QLDB ledger, S3 bucket, and EventBridge bus'
-});
-
-// Create the Bedrock Flow stack that depends on the foundation stack
-const bedrockFlowStack = new BedrockFlowStack(app, 'GraceBedrockFlowStack', foundationStack, {
-  env,
-  description: 'Amazon Bedrock Flow orchestration for the GRACE audit workflow'
+  description: 'Core infrastructure for the GRACE project including PostgreSQL database, S3 bucket, and EventBridge bus'
 });
 
 // Add tags to all resources
