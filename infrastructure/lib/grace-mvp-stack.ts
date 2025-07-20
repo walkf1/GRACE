@@ -28,10 +28,7 @@ export class GraceMvpStack extends cdk.Stack {
       versioned: true,
       objectLockEnabled: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
-      objectLockDefaultRetention: {
-        mode: s3.ObjectLockRetention.GOVERNANCE,
-        days: 365, // 1 year retention
-      },
+      objectLockDefaultRetention: s3.ObjectLockRetention.governance(cdk.Duration.days(365)),
     });
 
     // 3. Lambda function for audit handling
