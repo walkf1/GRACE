@@ -23,8 +23,19 @@ def get_db_credentials():
 def ensure_audit_table_exists():
     """Ensure the audit_records table exists in the database"""
     secret_arn, secret = get_db_credentials()
-    cluster_arn = os.environ.get('DATABASE_CLUSTER_ARN', 
-                                 f"arn:aws:rds:{os.environ.get('AWS_REGION', 'eu-west-2')}:{os.environ.get('AWS_ACCOUNT_ID', '')}:cluster:{os.environ['DATABASE_ENDPOINT'].split('.')[0]}")
+    
+    # Get the cluster ARN from environment variables
+    cluster_arn = os.environ.get('DATABASE_CLUSTER_ARN')
+    
+    # If not provided, construct it from the endpoint
+    if not cluster_arn or '${Token' in cluster_arn:
+        region = os.environ.get('AWS_REGION', 'eu-west-2')
+        account_id = os.environ.get('AWS_ACCOUNT_ID', '')
+        endpoint = os.environ.get('DATABASE_ENDPOINT', '')
+        cluster_name = endpoint.split('.')[0] if endpoint else ''
+        cluster_arn = f"arn:aws:rds:{region}:{account_id}:cluster:{cluster_name}"
+        
+    print(f"Using cluster ARN: {cluster_arn}")
     database_name = os.environ.get('DATABASE_NAME', 'postgres')
     
     # SQL to create the table if it doesn't exist

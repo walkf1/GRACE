@@ -61,11 +61,7 @@ export class GraceLogicStack extends cdk.NestedStack {
       environment: {
         DATABASE_SECRET_ARN: databaseSecret.secretArn,
         DATABASE_ENDPOINT: props.databaseEndpoint,
-        DATABASE_CLUSTER_ARN: this.formatArn({
-          service: 'rds',
-          resource: 'cluster',
-          resourceName: props.databaseEndpoint.split('.')[0]
-        }),
+        DATABASE_CLUSTER_ARN: `arn:aws:rds:${this.region}:${this.account}:cluster:${props.databaseEndpoint.split('.')[0]}`,
         DATABASE_NAME: 'postgres',
         ENVIRONMENT: isProduction ? 'production' : 'development'
       },
