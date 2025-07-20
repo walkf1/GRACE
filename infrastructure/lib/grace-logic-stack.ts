@@ -4,6 +4,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
+import * as lambdaPython from '@aws-cdk/aws-lambda-python-alpha';
 import { GraceFoundationStack } from './grace-foundation-stack';
 
 export interface GraceLogicStackProps extends cdk.NestedStackProps {
@@ -48,11 +49,12 @@ export class GraceLogicStack extends cdk.NestedStack {
       'Allow Lambda to connect to PostgreSQL'
     );
 
-    // Create the ProvenanceLogger Lambda function
-    this.provenanceLogger = new lambda.Function(this, 'ProvenanceLogger', {
-      runtime: lambda.Runtime.PYTHON_3_12,
-      handler: 'index.handler',
-      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/provenance_logger')),
+    // Create the ProvenanceLogger Lambda function using the Python function construct
+    this.provenanceLogger = new lambdaPython.PythonFunction(this, 'ProvenanceLogger', {
+      runtime: lambda.Runtime.PYTHON_3_9,  // Using Python 3.9 for better compatibility with psycopg2
+      entry: path.join(__dirname, '../lambda/provenance_logger'),
+      index: 'index.py',
+      handler: 'handler',
       vpc,
       vpcSubnets: {
         subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS
@@ -61,8 +63,6 @@ export class GraceLogicStack extends cdk.NestedStack {
       environment: {
         DATABASE_SECRET_ARN: databaseSecret.secretArn,
         DATABASE_ENDPOINT: props.databaseEndpoint,
-        DATABASE_CLUSTER_ARN: `arn:aws:rds:${this.region}:${this.account}:cluster:${props.databaseEndpoint.split('.')[0]}`,
-        DATABASE_NAME: 'postgres',
         ENVIRONMENT: isProduction ? 'production' : 'development'
       },
       timeout: cdk.Duration.seconds(30),

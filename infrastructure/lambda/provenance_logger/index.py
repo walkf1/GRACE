@@ -4,39 +4,42 @@ import boto3
 import hashlib
 import base64
 import datetime
-import uuid
+import psycopg2
+import logging
+
+# Set up logging
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 # Initialize AWS clients
 secretsmanager = boto3.client('secretsmanager')
-rds_data = boto3.client('rds-data')
 
-def get_db_credentials():
-    """Get database credentials from Secrets Manager"""
+def get_db_connection():
+    """Establish a connection to the PostgreSQL database using credentials from Secrets Manager"""
     secret_arn = os.environ['DATABASE_SECRET_ARN']
     
     # Get the secret
     secret_response = secretsmanager.get_secret_value(SecretId=secret_arn)
     secret = json.loads(secret_response['SecretString'])
     
-    return secret_arn, secret
+    # Extract credentials
+    username = secret['username']
+    password = secret['password']
+    host = os.environ['DATABASE_ENDPOINT']
+    
+    # Connect to the database
+    conn = psycopg2.connect(
+        host=host,
+        user=username,
+        password=password,
+        database='postgres'  # Default database name
+    )
+    
+    return conn
 
-def ensure_audit_table_exists():
+def ensure_audit_table_exists(conn):
     """Ensure the audit_records table exists in the database"""
-    secret_arn, secret = get_db_credentials()
-    
-    # Get the cluster ARN from environment variables
-    cluster_arn = os.environ.get('DATABASE_CLUSTER_ARN')
-    
-    # If not provided, construct it from the endpoint
-    if not cluster_arn or '${Token' in cluster_arn:
-        region = os.environ.get('AWS_REGION', 'eu-west-2')
-        account_id = os.environ.get('AWS_ACCOUNT_ID', '')
-        endpoint = os.environ.get('DATABASE_ENDPOINT', '')
-        cluster_name = endpoint.split('.')[0] if endpoint else ''
-        cluster_arn = f"arn:aws:rds:{region}:{account_id}:cluster:{cluster_name}"
-        
-    print(f"Using cluster ARN: {cluster_arn}")
-    database_name = os.environ.get('DATABASE_NAME', 'postgres')
+    cursor = conn.cursor()
     
     # SQL to create the table if it doesn't exist
     sql = """
@@ -50,14 +53,9 @@ def ensure_audit_table_exists():
     """
     
     # Execute the SQL statement
-    response = rds_data.execute_statement(
-        resourceArn=cluster_arn,
-        secretArn=secret_arn,
-        database=database_name,
-        sql=sql
-    )
-    
-    return cluster_arn, secret_arn, database_name
+    cursor.execute(sql)
+    conn.commit()
+    cursor.close()
 
 def calculate_hash(data, previous_hash=None):
     """Calculate a hash of the data, incorporating the previous hash if available"""
@@ -72,68 +70,56 @@ def calculate_hash(data, previous_hash=None):
     hash_obj = hashlib.sha256(data_str.encode())
     return base64.b64encode(hash_obj.digest()).decode()
 
-def get_last_hash(cluster_arn, secret_arn, database_name):
+def get_last_hash(conn):
     """Get the hash of the last record in the database"""
-    sql = "SELECT hash FROM audit_records ORDER BY timestamp DESC LIMIT 1"
+    cursor = conn.cursor()
     
     try:
-        response = rds_data.execute_statement(
-            resourceArn=cluster_arn,
-            secretArn=secret_arn,
-            database=database_name,
-            sql=sql
-        )
+        cursor.execute("SELECT hash FROM audit_records ORDER BY timestamp DESC LIMIT 1")
+        result = cursor.fetchone()
         
-        # Check if we got any records
-        if response['records'] and len(response['records']) > 0:
-            return response['records'][0][0]['stringValue']
+        if result:
+            return result[0]
         
         return None
     except Exception as e:
-        print(f"Error getting last hash: {str(e)}")
+        logger.error(f"Error getting last hash: {str(e)}")
         return None
+    finally:
+        cursor.close()
 
 def log_provenance(event_data):
     """Log provenance data to the database with cryptographic chaining"""
-    # Ensure the audit_records table exists
-    cluster_arn, secret_arn, database_name = ensure_audit_table_exists()
-    
-    # Get the last hash from the database (if any)
-    previous_hash = get_last_hash(cluster_arn, secret_arn, database_name)
-    
-    # Calculate the new hash
-    current_hash = calculate_hash(event_data, previous_hash)
-    
-    # Insert the record
-    timestamp = datetime.datetime.now().isoformat()
-    event_data_json = json.dumps(event_data)
-    
-    sql = """
-    INSERT INTO audit_records (timestamp, event_data, hash, previous_hash)
-    VALUES (:timestamp, :event_data::jsonb, :hash, :previous_hash)
-    RETURNING id
-    """
-    
-    parameters = [
-        {'name': 'timestamp', 'value': {'stringValue': timestamp}},
-        {'name': 'event_data', 'value': {'stringValue': event_data_json}},
-        {'name': 'hash', 'value': {'stringValue': current_hash}},
-        {'name': 'previous_hash', 'value': {'stringValue': previous_hash if previous_hash else ''}}
-    ]
-    
+    conn = None
     try:
-        response = rds_data.execute_statement(
-            resourceArn=cluster_arn,
-            secretArn=secret_arn,
-            database=database_name,
-            sql=sql,
-            parameters=parameters
+        # Connect to the database
+        conn = get_db_connection()
+        
+        # Ensure the audit_records table exists
+        ensure_audit_table_exists(conn)
+        
+        # Get the last hash from the database (if any)
+        previous_hash = get_last_hash(conn)
+        
+        # Calculate the new hash
+        current_hash = calculate_hash(event_data, previous_hash)
+        
+        # Insert the record
+        cursor = conn.cursor()
+        timestamp = datetime.datetime.now().isoformat()
+        
+        cursor.execute(
+            "INSERT INTO audit_records (timestamp, event_data, hash, previous_hash) VALUES (%s, %s, %s, %s) RETURNING id",
+            (timestamp, json.dumps(event_data), current_hash, previous_hash)
         )
         
         # Get the ID of the inserted record
-        record_id = None
-        if response['records'] and len(response['records']) > 0:
-            record_id = response['records'][0][0]['longValue']
+        record_id = cursor.fetchone()[0]
+        
+        conn.commit()
+        cursor.close()
+        
+        logger.info(f"Provenance record created with ID: {record_id}")
         
         return {
             'id': record_id,
@@ -142,20 +128,17 @@ def log_provenance(event_data):
             'previous_hash': previous_hash
         }
     except Exception as e:
-        print(f"Error inserting record: {str(e)}")
+        logger.error(f"Error in log_provenance: {str(e)}")
+        if conn:
+            conn.rollback()
         raise
+    finally:
+        if conn:
+            conn.close()
 
 def handler(event, context):
     """Lambda handler function"""
     try:
-        # Extract AWS account ID from the context
-        if context:
-            os.environ['AWS_ACCOUNT_ID'] = context.invoked_function_arn.split(':')[4]
-        
-        # Extract AWS region from the context
-        if context:
-            os.environ['AWS_REGION'] = context.invoked_function_arn.split(':')[3]
-        
         # Process the event
         result = log_provenance(event)
         
@@ -167,7 +150,7 @@ def handler(event, context):
             })
         }
     except Exception as e:
-        print(f"Error: {str(e)}")
+        logger.error(f"Error: {str(e)}")
         return {
             'statusCode': 500,
             'body': json.dumps({
