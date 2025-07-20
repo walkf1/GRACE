@@ -4,6 +4,7 @@ import * as cdk from 'aws-cdk-lib';
 import { GraceFoundationStack } from '../lib/grace-foundation-stack';
 import { GraceLogicStack } from '../lib/grace-logic-stack';
 import { GraceOrchestrationStack } from '../lib/grace-orchestration-stack';
+import { GraceMvpStack } from '../lib/grace-mvp-stack';
 
 const app = new cdk.App();
 
@@ -15,6 +16,13 @@ const env = {
 
 // Determine if this is a production deployment
 const isProduction = process.env.ENVIRONMENT === 'production';
+
+// Create the MVP stack with immutable S3 ledger architecture
+const mvpStack = new GraceMvpStack(app, 'GraceMvpStack', {
+  env,
+  description: 'MVP implementation of GRACE using immutable S3 ledger architecture',
+  isProduction
+});
 
 // Create the foundation stack with core resources
 const foundationStack = new GraceFoundationStack(app, 'GraceFoundationStack', {
