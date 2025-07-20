@@ -5,6 +5,7 @@ import hashlib
 import base64
 import datetime
 import logging
+import uuid
 
 # Set up logging
 logger = logging.getLogger()
