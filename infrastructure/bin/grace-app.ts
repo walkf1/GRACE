@@ -5,6 +5,8 @@ import { GraceFoundationStack } from '../lib/grace-foundation-stack';
 import { GraceLogicStack } from '../lib/grace-logic-stack';
 import { GraceOrchestrationStack } from '../lib/grace-orchestration-stack';
 import { GraceMvpStack } from '../lib/grace-mvp-stack';
+import { GraceS3Stack } from '../lib/grace-s3-stack';
+import { GraceApiStack } from '../lib/grace-api-stack';
 
 const app = new cdk.App();
 
@@ -21,6 +23,21 @@ const isProduction = process.env.ENVIRONMENT === 'production';
 const mvpStack = new GraceMvpStack(app, 'GraceMvpStack', {
   env,
   description: 'MVP implementation of GRACE using immutable S3 ledger architecture',
+  isProduction
+});
+
+// Create the API stack with Cognito, API Gateway, and Lambda
+const apiStack = new GraceApiStack(app, 'GraceApiStack', {
+  env,
+  description: 'API layer for GRACE with Cognito authentication and API Gateway',
+  ledgerBucketName: mvpStack.ledgerBucket.bucketName,
+  isProduction
+});
+
+// Create the S3 stack with updated Node.js 20 Lambda function
+const s3Stack = new GraceS3Stack(app, 'GraceS3Stack', {
+  env,
+  description: 'S3 utilities for GRACE with updated Node.js 20 Lambda functions',
   isProduction
 });
 

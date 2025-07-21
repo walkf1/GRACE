@@ -10,6 +10,7 @@ export interface GraceMvpStackProps extends cdk.StackProps {
 }
 
 export class GraceMvpStack extends cdk.Stack {
+  public readonly ledgerBucket: s3.Bucket;
   constructor(scope: Construct, id: string, props?: GraceMvpStackProps) {
     super(scope, id, props);
 
@@ -24,7 +25,7 @@ export class GraceMvpStack extends cdk.Stack {
     });
 
     // 2. S3 bucket for immutable ledger with Object Lock
-    const ledgerBucket = new s3.Bucket(this, 'LedgerBucket', {
+    this.ledgerBucket = new s3.Bucket(this, 'LedgerBucket', {
       versioned: true,
       objectLockEnabled: true,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
@@ -37,13 +38,13 @@ export class GraceMvpStack extends cdk.Stack {
       handler: 'index.handler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/audit_handler')),
       environment: {
-        LEDGER_BUCKET_NAME: ledgerBucket.bucketName,
+        LEDGER_BUCKET_NAME: this.ledgerBucket.bucketName,
       },
     });
 
     // Grant the Lambda function permissions to read from uploads bucket and write to ledger bucket
     uploadsBucket.grantRead(auditHandler);
-    ledgerBucket.grantWrite(auditHandler);
+    this.ledgerBucket.grantWrite(auditHandler);
 
     // Configure S3 event notification to trigger Lambda
     uploadsBucket.addEventNotification(
@@ -58,7 +59,7 @@ export class GraceMvpStack extends cdk.Stack {
     });
 
     new cdk.CfnOutput(this, 'LedgerBucketName', {
-      value: ledgerBucket.bucketName,
+      value: this.ledgerBucket.bucketName,
       description: 'The name of the S3 bucket for the immutable ledger',
     });
   }

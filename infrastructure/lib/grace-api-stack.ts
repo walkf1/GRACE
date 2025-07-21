@@ -1,99 +1,113 @@
 import * as cdk from 'aws-cdk-lib';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as path from 'path';
 import { Construct } from 'constructs';
-import { GraceLogicStack } from './grace-logic-stack';
+
+export interface GraceApiStackProps extends cdk.StackProps {
+  ledgerBucketName: string;
+  isProduction?: boolean;
+}
 
 export class GraceApiStack extends cdk.Stack {
-  public readonly apiEndpoint: string;
-  public readonly userPoolId: string;
-  public readonly userPoolClientId: string;
+  public readonly userPool: cognito.UserPool;
+  public readonly api: apigateway.RestApi;
+  public readonly chainVerifierFunction: lambda.Function;
 
-  constructor(scope: Construct, id: string, logicStack: GraceLogicStack, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props: GraceApiStackProps) {
     super(scope, id, props);
+    
+    // Get isProduction flag from props
+    const isProduction = props?.isProduction || false;
 
-    // Create Cognito User Pool
-    const userPool = new cognito.UserPool(this, 'GraceUserPool', {
-      userPoolName: 'grace-user-pool',
-      selfSignUpEnabled: false,
-      signInAliases: {
-        email: true,
+    // 1. Create Cognito User Pool
+    this.userPool = new cognito.UserPool(this, 'GraceUserPool', {
+      selfSignUpEnabled: true,
+      autoVerify: { email: true },
+      standardAttributes: {
+        email: { required: true, mutable: true },
       },
       passwordPolicy: {
-        minLength: 12,
+        minLength: 8,
         requireLowercase: true,
         requireUppercase: true,
         requireDigits: true,
         requireSymbols: true,
       },
-      accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
+      removalPolicy: isProduction ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });
 
-    // Create User Pool Client
-    const userPoolClient = userPool.addClient('GraceUserPoolClient', {
-      userPoolClientName: 'grace-app-client',
+    // Add a client to the user pool
+    const userPoolClient = this.userPool.addClient('GraceApiClient', {
       authFlows: {
         userPassword: true,
         userSrp: true,
       },
-      generateSecret: false,
     });
 
-    // Create API Gateway
-    const api = new apigateway.RestApi(this, 'GraceApi', {
+    // 2. Create API Gateway with Cognito Authorizer
+    this.api = new apigateway.RestApi(this, 'GraceApi', {
       restApiName: 'GRACE API',
-      description: 'API for GRACE audit trail',
-      deployOptions: {
-        stageName: 'v1',
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
-      },
+      description: 'API for GRACE audit verification',
       defaultCorsPreflightOptions: {
         allowOrigins: apigateway.Cors.ALL_ORIGINS,
         allowMethods: apigateway.Cors.ALL_METHODS,
       },
     });
 
-    // Create Cognito Authorizer
+    // Create Cognito authorizer
     const authorizer = new apigateway.CognitoUserPoolsAuthorizer(this, 'GraceAuthorizer', {
-      cognitoUserPools: [userPool],
-      authorizerName: 'grace-cognito-authorizer',
+      cognitoUserPools: [this.userPool],
     });
 
-    // Create /audits resource
-    const auditsResource = api.root.addResource('audits');
+    // 3. Create ChainVerifier Lambda function
+    this.chainVerifierFunction = new lambda.Function(this, 'ChainVerifierFunction', {
+      runtime: lambda.Runtime.PYTHON_3_9,
+      handler: 'index.handler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/chain_verifier')),
+      environment: {
+        LEDGER_BUCKET_NAME: props.ledgerBucketName,
+      },
+      timeout: cdk.Duration.seconds(30),
+    });
 
-    // Add POST method with Lambda integration and Cognito authorization
-    auditsResource.addMethod('POST', 
-      new apigateway.LambdaIntegration(logicStack.provenanceLogger, {
-        proxy: true,
-      }), {
+    // Grant permissions to read from the ledger bucket
+    this.chainVerifierFunction.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['s3:ListBucket', 's3:GetObject'],
+      resources: [
+        `arn:aws:s3:::${props.ledgerBucketName}`,
+        `arn:aws:s3:::${props.ledgerBucketName}/*`,
+      ],
+    }));
+
+    // 4. Create API endpoint with Lambda integration
+    const audits = this.api.root.addResource('audits');
+    const datasetId = audits.addResource('{datasetId}');
+    const verify = datasetId.addResource('verify');
+
+    verify.addMethod('POST', 
+      new apigateway.LambdaIntegration(this.chainVerifierFunction), {
         authorizer: authorizer,
         authorizationType: apigateway.AuthorizationType.COGNITO,
       }
     );
 
-    // Store outputs as class properties
-    this.apiEndpoint = api.url;
-    this.userPoolId = userPool.userPoolId;
-    this.userPoolClientId = userPoolClient.userPoolClientId;
-
-    // Create CloudFormation outputs
-    new cdk.CfnOutput(this, 'ApiEndpoint', {
-      value: api.url,
-      description: 'URL of the GRACE API',
-      exportName: 'GraceApiEndpoint',
-    });
-
+    // Outputs
     new cdk.CfnOutput(this, 'UserPoolId', {
-      value: userPool.userPoolId,
-      description: 'ID of the Cognito User Pool',
-      exportName: 'GraceUserPoolId',
+      value: this.userPool.userPoolId,
+      description: 'The ID of the Cognito User Pool',
     });
 
     new cdk.CfnOutput(this, 'UserPoolClientId', {
       value: userPoolClient.userPoolClientId,
-      description: 'ID of the Cognito User Pool Client',
-      exportName: 'GraceUserPoolClientId',
+      description: 'The ID of the Cognito User Pool Client',
+    });
+
+    new cdk.CfnOutput(this, 'ApiUrl', {
+      value: this.api.url,
+      description: 'The URL of the API Gateway',
     });
   }
 }
