@@ -3,8 +3,8 @@ import os
 import boto3
 import hashlib
 import base64
-import datetime
-import uuid
+import time
+from datetime import datetime
 
 # Initialize AWS clients
 s3_client = boto3.client('s3')
@@ -22,105 +22,114 @@ def calculate_hash(data, previous_hash=None):
     hash_obj = hashlib.sha256(data_str.encode())
     return base64.b64encode(hash_obj.digest()).decode()
 
-def get_previous_hash():
-    """Get the hash of the last record in the ledger bucket"""
-    ledger_bucket = os.environ['LEDGER_BUCKET_NAME']
-    
+def get_latest_hash(bucket_name, dataset_id):
+    """Get the latest hash for a dataset"""
     try:
-        # List objects in the ledger bucket
+        # List all audit records for the dataset
+        prefix = f"audit/{dataset_id}/"
         response = s3_client.list_objects_v2(
-            Bucket=ledger_bucket,
-            MaxKeys=1,
-            OrderBy='LastModified',
-            Prefix='audit/'
+            Bucket=bucket_name,
+            Prefix=prefix
         )
         
-        # Check if we got any objects
-        if 'Contents' in response and len(response['Contents']) > 0:
-            # Get the latest object
-            latest_key = response['Contents'][0]['Key']
-            
-            # Get the object metadata
-            head_response = s3_client.head_object(
-                Bucket=ledger_bucket,
-                Key=latest_key
-            )
-            
-            # Return the hash from the metadata
-            if 'Metadata' in head_response and 'hash' in head_response['Metadata']:
-                return head_response['Metadata']['hash']
+        if 'Contents' not in response:
+            return None
         
-        return None
+        # Sort records by timestamp (assuming timestamp is part of the key)
+        records = sorted(response['Contents'], key=lambda x: x['Key'], reverse=True)
+        
+        # Get the latest record
+        latest_record = s3_client.get_object(
+            Bucket=bucket_name,
+            Key=records[0]['Key']
+        )
+        
+        # Parse the record
+        audit_record = json.loads(latest_record['Body'].read().decode('utf-8'))
+        
+        return audit_record.get('hash')
+    
     except Exception as e:
-        print(f"Error getting previous hash: {str(e)}")
+        print(f"Error getting latest hash: {str(e)}")
         return None
+
+def extract_dataset_id(key):
+    """Extract dataset ID from the object key"""
+    # This is a simple implementation - adjust based on your naming convention
+    filename = key.split('/')[-1]
+    if '.' in filename:
+        return filename.split('.')[0]
+    return filename
 
 def handler(event, context):
     """Lambda handler function"""
     try:
-        # Get the ledger bucket name
+        print(f"Received event: {json.dumps(event)}")
+        
+        # Get the ledger bucket name from environment variables
         ledger_bucket = os.environ['LEDGER_BUCKET_NAME']
         
-        # Process each S3 event
+        # Process each record in the event
         for record in event['Records']:
-            # Extract S3 event data
+            # Get the bucket and key from the record
             bucket = record['s3']['bucket']['name']
             key = record['s3']['object']['key']
             
-            # Get the object metadata
-            response = s3_client.head_object(
+            print(f"Processing file: s3://{bucket}/{key}")
+            
+            # Extract dataset ID from the key
+            dataset_id = extract_dataset_id(key)
+            
+            # Get the object
+            response = s3_client.get_object(
                 Bucket=bucket,
                 Key=key
             )
             
-            # Create the audit record
-            audit_data = {
-                'source_bucket': bucket,
-                'source_key': key,
-                'event_time': record['eventTime'],
-                'object_size': response['ContentLength'],
-                'object_etag': response['ETag'].strip('"'),
-                'event_name': record['eventName'],
-                'user_identity': record['userIdentity']['principalId']
-            }
+            # Read the object content
+            content = response['Body'].read().decode('utf-8')
             
-            # Get the previous hash
-            previous_hash = get_previous_hash()
+            # Try to parse as JSON
+            try:
+                data = json.loads(content)
+            except json.JSONDecodeError:
+                # If not JSON, create a simple metadata object
+                data = {
+                    'filename': key,
+                    'content_type': response.get('ContentType', 'application/octet-stream'),
+                    'size': response.get('ContentLength', 0)
+                }
             
-            # Calculate the new hash
-            current_hash = calculate_hash(audit_data, previous_hash)
+            # Get the latest hash for this dataset
+            previous_hash = get_latest_hash(ledger_bucket, dataset_id)
             
-            # Create a unique ID for the audit record
-            record_id = str(uuid.uuid4())
-            timestamp = datetime.datetime.now().isoformat()
-            
-            # Create the audit record JSON
+            # Create audit record
+            timestamp = datetime.utcnow().isoformat()
             audit_record = {
-                'id': record_id,
+                'dataset_id': dataset_id,
                 'timestamp': timestamp,
-                'data': audit_data,
-                'hash': current_hash,
+                'source': {
+                    'bucket': bucket,
+                    'key': key
+                },
+                'data': data,
                 'previous_hash': previous_hash
             }
             
-            # Save the audit record to the ledger bucket
-            audit_key = f"audit/{timestamp}-{record_id}.json"
+            # Calculate hash
+            hash_value = calculate_hash(data, previous_hash)
+            audit_record['hash'] = hash_value
             
+            # Store the audit record in the ledger bucket
+            audit_key = f"audit/{dataset_id}/{timestamp}-{hash_value}.json"
             s3_client.put_object(
                 Bucket=ledger_bucket,
                 Key=audit_key,
                 Body=json.dumps(audit_record),
-                ContentType='application/json',
-                Metadata={
-                    'hash': current_hash,
-                    'previous_hash': previous_hash if previous_hash else ''
-                },
-                ObjectLockRetainUntilDate=datetime.datetime.now() + datetime.timedelta(days=365),
-                ObjectLockMode='GOVERNANCE',
-                ObjectLockLegalHoldStatus='OFF'
+                ContentType='application/json'
             )
             
-            print(f"Audit record created: {audit_key}")
+            print(f"Created audit record: s3://{ledger_bucket}/{audit_key}")
         
         return {
             'statusCode': 200,
@@ -128,6 +137,7 @@ def handler(event, context):
                 'message': 'Audit records created successfully'
             })
         }
+    
     except Exception as e:
         print(f"Error: {str(e)}")
         return {
